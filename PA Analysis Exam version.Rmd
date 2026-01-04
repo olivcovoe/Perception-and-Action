@@ -23,15 +23,6 @@ Participants' info
 sd_age <- sd(data$age)
 mean_age <- mean(data$age)
 
-#Plotting it
-ggplot(data, aes(x = age)) +
-  geom_histogram(binwidth = 5, fill = "skyblue", color = "black", alpha = 0.7) +
-  geom_vline(aes(xintercept = mean_age), color = "red", linetype = "dashed", size = 1) +
-  geom_vline(aes(xintercept = mean_age + sd_age), color = "darkgreen", linetype = "dotted", size = 1) +
-  geom_vline(aes(xintercept = mean_age - sd_age), color = "darkgreen", linetype = "dotted", size = 1) +
-  labs(title = "Histogram of Ages", x = "Age", y = "Count") +
-  theme_minimal()
-
 # Count number of each gender
 library(dplyr)
 data %>% group_by(sex) %>% summarise(count = n())
@@ -49,13 +40,41 @@ new_data <- data %>%
     floor((as.numeric(sub("-.*", "", est_time)) + 
            as.numeric(sub(".*-", "", est_time)) + 1)/2),
     as.numeric(est_time)
+  ))   
+```
+
+Creating new dfs with minimal values and maximal values
+```{r}
+#Minimal values df
+library(readr)
+
+new_data_min <- data %>%
+  mutate(est_time = ifelse(
+    grepl("-", est_time),
+    parse_number(sub("-.*", "", est_time)),  # take the first number
+    parse_number(est_time)
   ))
+
+#Maximal values df
+new_data_max <- data %>%
+  mutate(est_time = ifelse(
+    grepl("-", est_time),
+    parse_number(sub(".*-", "", est_time)),  # take the second number
+    parse_number(est_time)
+  ))
+new_data_max
 ```
 
 ```{r}
 #Calculate estimation error and absolute error
 new_data$estimation_error <- new_data$est_time - new_data$actual_time
 new_data$absolute_error <- abs(new_data$estimation_error)
+
+new_data_min$estimation_error <- new_data_min$est_time - new_data_min$actual_time
+new_data_min$absolute_error <- abs(new_data_min$estimation_error)
+
+new_data_max$estimation_error <- new_data_max$est_time - new_data_max$actual_time
+new_data_max$absolute_error <- abs(new_data_max$estimation_error)
 
 # Ensure the variables are factors
 new_data$Condition <- factor(new_data$Condition, levels = c("pro", "retro"))
@@ -96,11 +115,11 @@ p4 <- ggplot(new_data, aes(x = immersion, y = estimation_error, color = Conditio
   theme_minimal()
 p4
 ```
-Does prospective timing reduce distortion?
+
 ```{r}
-#Checking the direction differences of conditions
-t.test(estimation_error ~ Condition, data = new_data)       # directional difference
-t.test(absolute_error ~ Condition, data = new_data) # accuracy difference
+#Checking the direction and accuracy differences of conditions
+t.test(estimation_error ~ Condition, data = new_data)
+t.test(absolute_error ~ Condition, data = new_data)
 
 # Visualizing
 ggplot(new_data, aes(x = Condition, y = estimation_error, fill = Condition)) +
@@ -110,142 +129,77 @@ ggplot(new_data, aes(x = Condition, y = estimation_error, fill = Condition)) +
        y = "Estimation Error (minutes)") +
   theme_minimal() +
   theme(legend.position = "none")
-
-
 ```
-- Both groups overestimated, but the prospective group did so significantly more.
-There is a trend toward worse accuracy in the prospective group, but evidence is insufficient.(A bit strange. Do not understand it fully)
-- Prospective timing led to estimates that were, on average, about 3.1 minutes more biased than retrospective timing.
-- Absolute estimation error did not significantly differ between prospective and retrospective conditions, t(52.41) = 1.75, p = .086.
 
-If I take new_data_max, then the accuracy is significantly worse in prospective condition.
-
-```{r}
-#Do people overestimate or underestimate time in retrospective timing?
-t.test(new_data$estimation_error[new_data$Condition == "retro"], mu = 0)
-
-#How much do people over-/underestimate time in the retrospective condition?
-with(subset(new_data, Condition == "retro"), t.test(estimation_error, mu = 0))
-```
-Participants in the retrospective condition overestimated time on average by approximately 1.14 minutes; however, this deviation did not significantly differ from zero.
 
 ```{r}
 #Checking the variance difference
 library(car)
-leveneTest(absolute_error ~ Condition, data = new_data)    # Levene's test for variance
-
+leveneTest(absolute_error ~ Condition, data = new_data)
 ```
-There is no statistically significant evidence (at α = .05) that the two conditions differ in variance.
-
 
 
 Part III: Models
 ```{r}
-#Do frequent SM users have better time estimation (adaptation)?
-#Directional bias (do they overestimate less?)
 model1 <- lm(estimation_error ~ Condition + immersion + habitual_use, data = new_data)
 
+#Checking the minimal and maximal values
 model1_min <- lm(estimation_error ~ Condition + immersion + habitual_use, data = new_data_min)
 model1_max <- lm(estimation_error ~ Condition + immersion + habitual_use, data = new_data_max)
 
 #Check assumptions
 summary(model1)
-summary(model1_min)
-summary(model1_max)
 plot(model1)
-
 shapiro.test(residuals(model1))
 
 install.packages('lmtest')
 library(lmtest)
 dwtest(model1)
-
 vif(model1)
+
+summary(model1_min)
+summary(model1_max)
 ```
-Adding habitual_use doesn’t improve the model meaningfully; it has no significant effect.
-The main drivers are still Condition and immersion.
+
 
 ```{r}
-#Trying to make simpler models: model_immersion, model_hab_use
+#Trying to make simpler model - model_immersion
 model_immersion <- lm(estimation_error ~ Condition + immersion, data = new_data)
-model_immersion
 
+#Checking the minimal and maximal values
 model_immersion_min <- lm(estimation_error ~ Condition + immersion, data = new_data_min)
 model_immersion_max <- lm(estimation_error ~ Condition + immersion, data = new_data_max)
-
-model_hab_use <- lm(estimation_error ~ Condition + habitual_use, data = new_data)
-model_hab_use
-
 
 
 #Check assumptions for model_immersion
 summary(model_immersion)
-summary(model_immersion_min)
-summary(model_immersion_max)
 plot(model_immersion)
-
 shapiro.test(residuals(model_immersion))
-
 dwtest(model_immersion)
-
 vif(model_immersion)
 
-
-
-#Check assumptions for model_hab_use
-summary(model_hab_use)
-plot(model_hab_use)
-
-shapiro.test(residuals(model_hab_use))
-
-install.packages('lmtest')
-library(lmtest)
-dwtest(model_hab_use)
-
-vif(model_hab_use)
-#All assumptions were met, but ...
-#The tests show that model_immersion is statistically significant, unlike model_hab_use. Habitual use doesn’t add much here; only Condition seems to matter. Condition matters in both models
+summary(model_immersion_min)
+summary(model_immersion_max)
 ```
-
 
 ```{r}
 anova(model_immersion, model1)
-anova(model_immersion, model_immersion_int)
 ```
-This confirms what the coefficient summaries already suggested. habitual_use doesn’t add meaningful explanatory power, so the simpler model is preferred. model_immersion is the best so far
-
 
 ```{r}
 model_immersion_interaction <- lm(estimation_error ~ Condition * immersion, data = new_data)
 
 model_immersion_interaction_min <- lm(estimation_error ~ Condition * immersion, data = new_data_min)
-
 model_immersion_interaction_max <- lm(estimation_error ~ Condition * immersion, data = new_data_max)
 
 summary(model_immersion_interaction)
 summary(model_immersion_interaction_min)
 summary(model_immersion_interaction_max)
-#Interaction is still insignificant
-#immersion influences estimation error similarly in both conditions so there is no significant difference between influence of immersion between two conditions.
 ```
-2. Do Condition and Immersion “work together”?
-You already tested this with interactions.
-Condition × immersion → not significant
-Meaning:
-The effect of immersion is similar in both conditions
-The effect of condition is similar at low and high immersion
-📌 Practically:
-The retro condition helps regardless of how immersed someone is,
-and immersion helps regardless of condition.
-
 
 ```{r}
 model_abs <- lm(absolute_error ~ Condition + immersion, data = new_data)
 summary(model_abs)
-#Immersion: Estimate = -0.68, p ≈ 0.058 → trend-level effect. Higher immersion is associated with lower absolute error, meaning participants are closer to the true 15 minutes.
-#this supports your idea: immersion affects accuracy, not just underestimation. Even if the effect is marginal, it’s a lot more meaningful than interpreting signed error alone.
-
-#Maybe I should leave it out. Depending on the literature about boredom.
 ```
 
 
@@ -279,96 +233,6 @@ ggplot(new_df, aes(x = immersion, y = fit, color = Condition, fill = Condition))
     title = "Predicted Time Estimation Error by Condition and Immersion"
   ) +
   theme_minimal()
-
 ```
-“Lower immersion (i.e., boredom) is associated with greater overestimation of time.”
-Low immersion → larger positive errors → more overestimation
-High immersion → smaller errors → estimates closer to reality
-
-Immersion does not necessarily cause underestimation — it reduces the boredom-driven overestimation.
-
-
-A) Linearity & homoscedasticity
-plot(model, which = 1)
-- Random scatter → OK
-- Strong curve or funnel → problem
-
-B) Normality of residuals
-plot(model, which = 2)
-shapiro.test(residuals(model))
-- Points roughly on line → OK
-- Shapiro p > .05 → no strong violation
-(Mild deviations are fine.)
-
-C) Influential points
-plot(model, which = 4)
-- No extreme spikes → OK
-
-E) Multicollinearity
-vif(model)
-- VIF < 5 → OK
-
-
-```{r}
-model1.2 <- lm(estimation_error ~ Condition*immersion + Condition*habitual_use, data = new_data)
-model1.2
-
-
-summary(model1.2)
-confint(model1.2)
-```
-“How different is time estimation in pro vs retro timing?”
-- Retrospective timing leads to ~3.2 minutes less estimation error than prospective timing, controlling for immersion and habitual use.
-
-
-```{r}
-# Optional models. Ignoring Conditions. Looking at immersion and habitual use effects
-opt_1 <- lm(estimation_error ~ immersion + habitual_use, data = new_data)
-summary(opt_1)
-opt_11 <- lm(estimation_error ~ habitual_use, data = new_data)
-summary(opt_11)
-opt_12 <- lm(estimation_error ~ immersion, data = new_data)
-summary(opt_12)
-```
-opt1 - Even without Condition, immersion still explains estimation error. Habitual use does not. Condition improved fit in earlier models but isn’t strictly necessary for immersion’s effect to appear.
-
-
-
-Final interpretation of your model (corrected)
-Condition
-The retro condition has a negative coefficient
-→ Participants in the retro condition give lower answers (underestimate more) than those in the reference condition
-This is a systematic bias shift, not an accuracy improvement.
-Immersion
-Immersion also has a negative coefficient
-→ Higher immersion is associated with greater underestimation
-So immersion changes how estimates are biased, not how close they are in absolute terms.
-
-
-
-
-Part IV: creating new dfs with minimal values and maximal values
-```{r}
-#Minimal values df
-library(readr)
-
-new_data_min <- data %>%
-  mutate(est_time = ifelse(
-    grepl("-", est_time),
-    parse_number(sub("-.*", "", est_time)),  # take the first number
-    parse_number(est_time)
-  ))
-
-#Maximal values df
-new_data_max <- data %>%
-  mutate(est_time = ifelse(
-    grepl("-", est_time),
-    parse_number(sub(".*-", "", est_time)),  # take the second number
-    parse_number(est_time)
-  ))
-new_data_max
-```
-
-
 
 
